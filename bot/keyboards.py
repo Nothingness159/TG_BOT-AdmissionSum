@@ -1,103 +1,193 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from typing import Optional, List, Dict
+import re
+from urllib.parse import quote
 
-# -------------------------------
-# Кнопки "Назад" и "Выход" для переиспользования
-# -------------------------------
-def get_back_exit_keyboard(back_callback: str = "back", exit_callback: str = "exit") -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="Назад ◀️", callback_data=back_callback),
-            InlineKeyboardButton(text="Выход ❌", callback_data=exit_callback),
-        ]
-    ])
-    return keyboard
+def safe_callback_data(text: str, prefix: str = "") -> str:
+    # Удаляем недопустимые символы
+    clean_text = re.sub(r'[^a-zA-Z0-9а-яА-ЯёЁ_\- ]', '', text)
+    # Обрезаем до 30 символов
+    clean_text = clean_text[:30]
+    # URL-кодируем
+    encoded = quote(clean_text)
+    full_data = f"{prefix}{encoded}"
+    
+    # Дополнительно укорачиваем, если больше 64 байт
+    while len(full_data.encode('utf-8')) > 64:
+        clean_text = clean_text[:-1]
+        encoded = quote(clean_text)
+        full_data = f"{prefix}{encoded}"
+    
+    return full_data
+class BotKeyboards:
+    """Класс для генерации всех клавиатур бота"""
 
-# -------------------------------
-# Клавиатура выбора формы обучения
-# -------------------------------
-def get_form_keyboard(selected_form=None) -> InlineKeyboardMarkup:
-    forms = [
+    _BUTTONS_CONFIG = {
+        "next": ("Далее ▶️", "confirm"),
+        "back": ("Назад ◀️", "back"),
+        "exit": ("Выход ❌", "exit"),
+        "none": ("❌ Направления не найдены", "none")
+    }
+
+    _EDU_FORMS = [
         ("очная бюджет", "form:очная_бюджет"),
         ("очная договор", "form:очная_договор"),
         ("очно-заочная бюджет", "form:очно-заочная_бюджет"),
-        ("очно-заочная договор", "form:очно-заочная_договор"),
+        ("очно-заочная договор", "form:очно-заочная_договор")
     ]
 
-    buttons = []
-    for text, callback_data in forms:
-        if selected_form == callback_data.split(":")[1]:
-            text = "✅ " + text
-        buttons.append([InlineKeyboardButton(text=text, callback_data=callback_data)])
-
-    buttons.append([InlineKeyboardButton(text="Далее ▶️", callback_data="confirm_form")])
-    buttons.append([InlineKeyboardButton(text="Выход ❌", callback_data="exit")])
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-# -------------------------------
-# Клавиатура выбора дисциплин (до 3)
-# -------------------------------
-def get_subjects_keyboard(selected_subjects=None) -> InlineKeyboardMarkup:
-    if selected_subjects is None:
-        selected_subjects = []
-
-    subjects = [
-        "Базовая математика",
+    _SUBJECTS = [
         "Профильная математика",
+        "Базовая математика",
+        "Информатика",
         "Физика",
         "Химия",
-        "Информатика",
         "Биология",
         "История",
         "Обществознание",
-        "Английский язык",
-        "Русский язык",
+        "Иностранный язык",
         "Литература",
+        "География"
     ]
 
-    buttons = []
-    row = []
-    for subject in subjects:
-        text = subject
-        if subject in selected_subjects:
-            text = "✅ " + text
-        row.append(InlineKeyboardButton(text=text, callback_data=f"subject:{subject}"))
-        if len(row) == 2:
+    _ACHIEVEMENTS = {
+        "attestat_diplom": "Диплом/аттестат с отличием",
+        "gto": "Золотой значок ГТО"
+    }
+
+    @classmethod
+    def _add_control_buttons(cls, buttons: list, back_step: str = None) -> None:
+        """Добавляет стандартные кнопки управления"""
+        controls = []
+
+        if back_step:
+            controls.append(InlineKeyboardButton(
+                text=cls._BUTTONS_CONFIG["back"][0],
+                callback_data=f"back_to_{back_step}"
+            ))
+
+        controls.append(InlineKeyboardButton(
+            text=cls._BUTTONS_CONFIG["exit"][0],
+            callback_data=cls._BUTTONS_CONFIG["exit"][1]
+        ))
+
+        buttons.append(controls)
+
+    @classmethod
+    def get_form_keyboard(cls, selected_form: Optional[str] = None) -> InlineKeyboardMarkup:
+        """Клавиатура выбора формы обучения"""
+        buttons = []
+
+        for text, callback_data in cls._EDU_FORMS:
+            if selected_form and callback_data.split(":")[1] == selected_form:
+                text = f"✅ {text}"
+            buttons.append([InlineKeyboardButton(
+                text=text,
+                callback_data=callback_data
+            )])
+
+        # Кнопки управления
+        buttons.append([InlineKeyboardButton(
+            text=cls._BUTTONS_CONFIG["next"][0],
+            callback_data="confirm_form"
+        )])
+        cls._add_control_buttons(buttons)
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @classmethod
+    def get_subjects_keyboard(cls, selected_subjects: Optional[List[str]] = None) -> InlineKeyboardMarkup:
+        """Клавиатура выбора предметов"""
+        selected_subjects = selected_subjects or []
+        buttons = []
+        row = []
+
+        for subject in cls._SUBJECTS:
+            prefix = "✅ " if subject in selected_subjects else ""
+            row.append(InlineKeyboardButton(
+                text=f"{prefix}{subject}",
+                callback_data=f"subject:{subject}"
+            ))
+
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+
+        if row:
             buttons.append(row)
-            row = []
-    if row:  # Добавляем оставшиеся кнопки, если их нечетное количество
-        buttons.append(row)
 
-    buttons.append([InlineKeyboardButton(text="Далее ▶️", callback_data="confirm_subjects")])
-    
-    # Добавляем кнопки "Назад" и "Выход"
-    back_exit_buttons = get_back_exit_keyboard(
-        back_callback="back_to_form", 
-        exit_callback="exit"
-    ).inline_keyboard[0]
-    buttons.append(back_exit_buttons)
+        # Кнопки управления
+        buttons.append([InlineKeyboardButton(
+            text=cls._BUTTONS_CONFIG["next"][0],
+            callback_data="confirm_subjects"
+        )])
+        cls._add_control_buttons(buttons, back_step="form")
 
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# -------------------------------
-# Клавиатура с направлениями
-# -------------------------------
-def get_directions_keyboard(directions: list) -> InlineKeyboardMarkup:
-    buttons = []
-    for direction in directions:
-        buttons.append([InlineKeyboardButton(text=direction, callback_data=f"direction:{direction}")])
+    @classmethod
+    def get_direction_options_keyboard(cls) -> InlineKeyboardMarkup:
+        """Клавиатура опций направления"""
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text=cls._BUTTONS_CONFIG["back"][0],
+                callback_data="back_to_directions"
+            )
+        ]])
+    @classmethod
+    def get_directions_keyboard(cls, directions: List[str]) -> InlineKeyboardMarkup:
+        buttons = []
+        for direction in directions:
+            # Извлекаем код направления (до первого пробела или точки)
+            code_match = re.match(r'^\s*(\d+\.\d+\.\d+)', direction.strip())
+            code = code_match.group(1) if code_match else direction[:10]
 
-    # Добавляем кнопки "Назад" и "Выход"
-    back_exit_buttons = get_back_exit_keyboard(
-        back_callback="back_to_subjects", 
-        exit_callback="exit"
-    ).inline_keyboard[0]
-    buttons.append(back_exit_buttons)
+            # Для отображения: обрезаем длинные строки
+            display_text = direction[:30] + "..." if len(direction) > 30 else direction
+            
+            # callback_data содержит код направления
+            callback_data = f"direction:{code}"
 
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+            buttons.append([
+                InlineKeyboardButton(
+                    text=display_text,
+                    callback_data=callback_data
+                )
+            ])
 
-# -------------------------------
-# Клавиатура с опциями при просмотре направления
-# -------------------------------
-def get_direction_options_keyboard() -> InlineKeyboardMarkup:
-    return get_back_exit_keyboard(back_callback="back_to_directions", exit_callback="exit")
+        # Кнопки управления
+        buttons.append([
+            InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_subjects"),
+            InlineKeyboardButton(text="❌ Выход", callback_data="exit")
+        ])
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+    @classmethod
+    def get_direction_details_keyboard(cls) -> InlineKeyboardMarkup:
+        buttons = [
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_directions")],
+            [InlineKeyboardButton(text="❌ Выход", callback_data="exit")]
+        ]
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @classmethod
+    def get_achievements_keyboard(cls, selected_achievements: Optional[List[str]] = None) -> InlineKeyboardMarkup:
+        """Клавиатура выбора достижений"""
+        selected_achievements = selected_achievements or []
+        buttons = []
+
+        for key, label in cls._ACHIEVEMENTS.items():
+            prefix = "✅ " if key in selected_achievements else ""
+            buttons.append([InlineKeyboardButton(
+                text=f"{prefix}{label}",
+                callback_data=f"achievement:{key}"
+            )])
+
+        # Кнопки управления
+        buttons.append([InlineKeyboardButton(
+            text=cls._BUTTONS_CONFIG["next"][0],
+            callback_data="confirm_achievements"
+        )])
+        cls._add_control_buttons(buttons, back_step="subjects")
+
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
